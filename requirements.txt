@@ -1,2 +1,9 @@
+
+# TODO any way to make sure java is installed (for tabula-py purposes)
+# if it is not?
+
+# the below seems to also require urllib3 or chardet to run
+# TODO why isn't one of those installed during installation via pip if not
+# detected? seems like a bug to me
 tabula-py
 
