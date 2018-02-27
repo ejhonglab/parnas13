@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: UTF-8 -*-
 
 """
 Calculating distances as in Parnas et al. 2013, to make sure everything is
@@ -8,10 +9,11 @@ correct, and we can calculate the distances the same way for other odors.
 from os.path import exists
 import pickle
 
-from drosolf import pns
-
 import pandas as pd
 import numpy as np
+import ipdb
+
+from drosolf import pns
 
 pdf = 'parnas13_supplement.pdf'
 # TODO way to automatically get name of figure at same time? -> save to csv
@@ -20,6 +22,14 @@ pages = [13, 15, 16, 17, 18, 20]
 fig2page = {'s{}'.format(i + 1): p for i, p in enumerate(sorted(pages))}
 fig2df = {k: None for k in fig2page.keys()}
 regenerate_csvs = True
+
+
+def split_joined_column(series):
+    splt = series.str.split(' ')
+    left_series = splt.apply(lambda s: ''.join(s[:len(s) // 2]))
+    right_series = splt.apply(lambda s: ''.join(s[len(s) // 2:]))
+    return left_series, right_series
+
 
 for f, p in fig2page.items():
     datafile = 'parnas_{}.csv'.format(f)
@@ -45,6 +55,12 @@ for f, p in fig2page.items():
                 'requested page {}'.format(p))
             continue
 
+        if f != 's4':
+            continue
+
+        # drop any columns only containing NaN
+        df.dropna(axis=1, how='all', inplace=True)
+
         # format table to have correct column names
         # TODO will this work if there is only (either) an "Unnamed: 2" or
         # "Odors"? (trying to rename both to 'Odor B') what about if both are
@@ -56,22 +72,58 @@ for f, p in fig2page.items():
         # TODO get rid of spaces?
         df.rename(columns=lambda s: s.lower(), inplace=True)
 
-        print(df)
-        print('')
-        df.drop(0, inplace=True)
+        if f == 's2':
+            # TODO rename second to last col to decision bias ('unnamed: 6')
+            # and add a column for genotype, filling in [0, -1] for all [:, -1]
+            # wt for all [:, -2]
+            # delete current col for decision bias, or delete -2
+            # TODO rename 'unnamed: 3' to 'odor b' and drop current 'odor b'
+            # (all NaN)
+            pass
 
-        df['decision bias SEM'] = df['decision bias'].split(u' ± ')
-
-        if f == 's1':
-            df.drop(0, inplace=True)
-
-        '''
-        elif f == 's2':
         elif f == 's3':
+            pass
+
         elif f == 's4':
+            # ['unnamed: 7']['untrained at 320C'] -> ['trained_at'] =
+            # 'not_trained', ['tested_at'] = 32, ['decision bias {mean/SEM}'] =
+            # ['unnamed: 7'][3:]
+            # drop 0-2
+            tested25, tested32 = split_joined_column(df['decision bias'])
+            df['tmp1'] = tested25
+            df['tmp2'] = tested32
+
         elif f == 's5':
+            pass
+
         elif f == 's6':
-        '''
+            # TODO separate distances into different columns by genotype 
+            # in row 0, or add another column with that genotype
+            # TODO drop cols unnamed: 6&7
+            # TODO get col which has two sets of decision biases lumped together
+            # separated
+            pass
+
+        print('************* START **************')
+        print(f)
+        print(df.columns)
+        print(df)
+        print('************* END **************')
+        print('')
+        ipdb.set_trace()
+
+        df.drop(0, inplace=True)
+        df.to_csv(datafile)
+
+        mean_and_sem = df['decision bias'].str.split(u' ± ')
+        print(mean_and_sem)
+        # TODO make it just convert any non-numeric values to NaN?
+        df['decision bias mean'] = pd.to_numeric(mean_and_sem.apply( \
+            lambda x: x[0]))
+        df['decision bias SEM'] = pd.to_numeric(mean_and_sem.apply( \
+            lambda x: x[1]))
+        print(df['decision bias SEM'])
+
         # TODO need to drop that extra row of labels in S3? other reformatting?
 
         # normalize odor names if necessary (for interoperability w/ drosolf or
