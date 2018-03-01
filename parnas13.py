@@ -31,6 +31,40 @@ def split_joined_column(series):
     return left_series, right_series
 
 
+def make_tidy(df):
+    """
+    Args:
+        df: a DataFrame with columns ['number', 'odor a', 'odor b', 
+            'euclidean distance', 'cosine distance', ...]
+            where ... is many columns, each with a junk column name,
+            and each containing the genotype, training temperature, and testing
+            temperature, respectively, in the first three rows. Each subsequent
+            row should have a string with the decision bias mean +/- decision
+            bias SEM for the flies described by the first three rows.
+
+    Returns a dataframe where there is only one column for decision bias mean
+    and one column for decision bias SEM. There will be three extra columns
+    to describe the genotype and training and testing temperatures.
+
+    The number, odors, and distances will be copied such that each decision bias
+    will still be paired to the same of each of these.
+    """
+    # much thanks to tdsmith on the #pydata irc channel for a starting point for
+    # this code
+    label_columns = ['number', 'odor a', 'odor b', 'euclidean distance', \
+        'cosine distance']
+    labels = df.loc[3:, label_columns].reset_index()
+
+    values = df.loc[3:,] drop(label_columns, axis=1).T
+    values["genotype"] = df.iloc[0,:].drop(label_columns)
+    values["train"] = df.iloc[1,:].drop(label_columns)
+    values["test"] = df.iloc[2,:].drop(label_columns)
+
+    tidy = values.melt(id_vars=["genotype", "train", "test"], var_name="index")
+
+    merged = pd.merge(labels, tidy)
+    return merged
+
 for f, p in fig2page.items():
     datafile = 'parnas_{}.csv'.format(f)
 
@@ -110,10 +144,10 @@ for f, p in fig2page.items():
         print(df)
         print('************* END **************')
         print('')
+        df.to_csv(datafile)
         ipdb.set_trace()
 
-        df.drop(0, inplace=True)
-        df.to_csv(datafile)
+        #df.drop(0, inplace=True)
 
         mean_and_sem = df['decision bias'].str.split(u' ± ')
         print(mean_and_sem)
