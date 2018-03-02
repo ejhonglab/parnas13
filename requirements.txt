@@ -1,3 +1,8 @@
+# TODO why was it installing these two when i had them?
+#numpy
+#pandas
+scipy
+
 drosolf
 
 # TODO any way to make sure java is installed (for tabula-py purposes)

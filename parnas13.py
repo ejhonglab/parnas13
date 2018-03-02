@@ -11,6 +11,7 @@ import pickle
 
 import pandas as pd
 import numpy as np
+from scipy import spatial
 import ipdb
 
 from drosolf import pns
@@ -22,6 +23,10 @@ pages = [13, 15, 16, 17, 18, 20]
 fig2page = {'s{}'.format(i + 1): p for i, p in enumerate(sorted(pages))}
 fig2df = {k: None for k in fig2page.keys()}
 regenerate_csvs = True
+
+# will be extra work to parse these. may try it later.
+# TODO why is s5 parsed so badly? different tabula settings?
+skip = {'s3', 's5'}
 
 
 def split_joined_column(series):
@@ -55,7 +60,13 @@ def make_tidy(df):
         'cosine distance']
     labels = df.loc[3:, label_columns].reset_index()
 
-    values = df.loc[3:,] drop(label_columns, axis=1).T
+    # TODO only add train / test (temperature) columns if won't be all nan?
+    # something similar w/ genotype? do all others actually just parse to CS?
+    # TODO be careful not to drop data rows in cases where there aren't
+    # temperature or whatever extra metadata rows
+
+    # TODO same as [3:,:]?
+    values = df.loc[3:, ].drop(label_columns, axis=1).T
     values["genotype"] = df.iloc[0,:].drop(label_columns)
     values["train"] = df.iloc[1,:].drop(label_columns)
     values["test"] = df.iloc[2,:].drop(label_columns)
@@ -63,7 +74,52 @@ def make_tidy(df):
     tidy = values.melt(id_vars=["genotype", "train", "test"], var_name="index")
 
     merged = pd.merge(labels, tidy)
+
+    merged['value'] = merged['value'].apply(lambda s: ''.join(s.split()))
+    mean_and_sem = merged['value'].str.split(u'±')
+    merged['decision bias mean'] = pd.to_numeric(mean_and_sem.apply( \
+        lambda x: x[0]))
+    merged['decision bias SEM'] = pd.to_numeric(mean_and_sem.apply( \
+        lambda x: x[1]))
+    merged.drop('value', axis=1, inplace=True)
+
+    def normalize_temp(s):
+        if s is np.nan:
+            return np.nan
+        elif '25' in s:
+            return 25
+        elif '32' in s:
+            return 32
+        else:
+            return np.nan
+    # TODO special case s2, which has (testing?) temperature specified in
+    # different format
+    merged['train'] = merged['train'].apply(normalize_temp)
+    merged['test'] = merged['test'].apply(normalize_temp)
+
+    def normalize_odor_name(o):
+        # DoOR?
+
+        normalized_o = o.lower()
+
+        if normalized_o == 'limonen':
+            normalized_o = 'limonene'
+
+        elif normalized_o == 'δ-decalactone':
+            normalized_o = 'd-decalactone'
+
+        # TODO is hallem spontaneous rate the mineral oil reponse?
+        # it might actually be kind of important...
+        elif normalized_o == 'mineral oil':
+            normalized_o = 'spontaneous firing rate'
+
+        return normalized_o
+
+    merged['odor a'] = merged['odor a'].apply(normalize_odor_name)
+    merged['odor b'] = merged['odor b'].apply(normalize_odor_name)
+
     return merged
+
 
 for f, p in fig2page.items():
     datafile = 'parnas_{}.csv'.format(f)
@@ -89,7 +145,11 @@ for f, p in fig2page.items():
                 'requested page {}'.format(p))
             continue
 
-        if f != 's4':
+        #if f != 's4':
+        #    continue
+
+        if f in skip:
+            print('Skipping {}'.format(f))
             continue
 
         # drop any columns only containing NaN
@@ -111,9 +171,7 @@ for f, p in fig2page.items():
             # and add a column for genotype, filling in [0, -1] for all [:, -1]
             # wt for all [:, -2]
             # delete current col for decision bias, or delete -2
-            # TODO rename 'unnamed: 3' to 'odor b' and drop current 'odor b'
-            # (all NaN)
-            pass
+            df.rename(columns={'unnamed: 3': 'odor b'}, inplace=True)
 
         elif f == 's3':
             pass
@@ -123,9 +181,11 @@ for f, p in fig2page.items():
             # 'not_trained', ['tested_at'] = 32, ['decision bias {mean/SEM}'] =
             # ['unnamed: 7'][3:]
             # drop 0-2
+            # TODO refactor into function to fix joined column?
             tested25, tested32 = split_joined_column(df['decision bias'])
             df['tmp1'] = tested25
             df['tmp2'] = tested32
+            df.drop('decision bias', axis='columns', inplace=True)
 
         elif f == 's5':
             pass
@@ -137,56 +197,56 @@ for f, p in fig2page.items():
             # TODO get col which has two sets of decision biases lumped together
             # separated
             pass
-
-        print('************* START **************')
+        #print('************* START **************')
         print(f)
+        #print(df.columns)
+        #print(df)
+        df = make_tidy(df)
         print(df.columns)
         print(df)
-        print('************* END **************')
+        #print('************* END **************')
         print('')
-        df.to_csv(datafile)
-        ipdb.set_trace()
-
-        #df.drop(0, inplace=True)
-
-        mean_and_sem = df['decision bias'].str.split(u' ± ')
-        print(mean_and_sem)
-        # TODO make it just convert any non-numeric values to NaN?
-        df['decision bias mean'] = pd.to_numeric(mean_and_sem.apply( \
-            lambda x: x[0]))
-        df['decision bias SEM'] = pd.to_numeric(mean_and_sem.apply( \
-            lambda x: x[1]))
-        print(df['decision bias SEM'])
-
-        # TODO need to drop that extra row of labels in S3? other reformatting?
-
-        # normalize odor names if necessary (for interoperability w/ drosolf or
-        # DoOR)
-
-        # encode odor pairs as frozensets? can i put those in dfs?
 
         fig2df[f] = df
         df.to_csv(datafile)
 
+odors = set()
+odor_pairs = set()
+pair2euclidean = dict()
+pair2cosine = dict()
+
+for df in fig2df.values():
+    if df is None:
+        continue
+
+    for _, row in df.iterrows():
+        odors.add(row['odor a'])
+        odors.add(row['odor b'])
+        fs = frozenset((row['odor a'], row['odor b']))
+        odor_pairs.add(fs)
+        pair2euclidean[fs] = row['euclidean distance']
+        pair2cosine[fs] = row['cosine distance']
+
 pn_responses = pns.pns()
-'''
-n_odors_hallem = 
-n_glomeruli_hallem = 
 
-# get all pairs of odors mentioned in this figure
-# TODO order shouldnt matter, right?
-odor_pairs = set(table_data[f][0]) | set(table_data[f][1])
+# TODO is the index supposed to be 111 long? more?
+hallem_odors = set(pn_responses.index)
+assert len(odors - hallem_odors) == 0, 'no ORN data for some odors!'
 
-# calculate Euclidean and cosine distances between for these odors pairs
-distance_matrix = np.zeros(
-distances = np.distance(pn_responses)
-angles = np.cosine(pn_responses)
+for fs in odor_pairs:
+    o1, o2 = fs
+    pn1 = pn_responses.loc[o1]
+    pn2 = pn_responses.loc[o2]
 
-# sort as in supplement
-distances = np.argsort(distances)
-angles = np.argsort(angles, distances)
-
-for i, _ in enumerate(odor_pairs):
-'''
+    recalculated_euclidean = np.linalg.norm(pn1 - pn2)
+    # TODO also calculate with my own function
+    recalculated_cosine = spatial.distance.cosine(pn1, pn2)
+    # TODO way to print table like things in python? this looks ugly as hell
+    print('       Theirs | Ours')
+    print('{}, {}:   {}    {}'.format(o1, o2, pair2euclidean[fs], \
+        recalculated_euclidean))
+    print('                 cosine    {}    {}'.format(pair2cosine[fs], \
+        recalculated_cosine))
 
 # TODO how different are 1-OCT and 3-OCT? 3-OCT and MCH?
+
