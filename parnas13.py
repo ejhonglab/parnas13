@@ -12,16 +12,8 @@ import pickle
 import pandas as pd
 import numpy as np
 from scipy import spatial
-import ipdb
-try:
-    import rpy2.robjects.packages as rpackages
-    have_rpy2 = True
-except ImportError:
-    have_rpy2 = False
 
-from drosolf import pns
 
-'''
 pdf = 'parnas13_supplement.pdf'
 # TODO way to automatically get name of figure at same time? -> save to csv
 # <fig_name>.csv
@@ -253,41 +245,4 @@ for fs in odor_pairs:
         recalculated_euclidean))
     print('                 cosine    {}    {}'.format(pair2cosine[fs], \
         recalculated_cosine))
-'''
-
-# TODO how different are 1-OCT and 3-OCT? 3-OCT and MCH?
-if have_rpy2:
-    from rpy2.robjects.vectors import StrVector
-    from rpy2.robjects.packages import importr
-    from rpy2 import robjects as ro
-
-    # TODO how to check if r package is already installed?
-    utils = rpackages.importr('utils')
-    utils.chooseCRANmirror(ind=1)
-
-    if not rpackages.isinstalled('devtools'):
-        # TODO way to install package as personal library + create one
-        # by default? or run just this command as root?
-        print(dir(utils))
-        utils.install_packages(StrVector(('devtools',)))
-        print(utils.installed_packages())
-
-    else:
-        print('devtools installed!')
-
-    devtools = importr('devtools')
-
-    # do i need to use ro.r(...) ever? or can i do all without that? 
-    # TODO make timeout longer / retry?
-    devtools.install_github('ropensci/DoOR.data')
-    #devtools.install_github('ropensci/DoOR.functions')
-
-    door_data = importr('DoOR.data')
-    print(dir(door_data))
-
-    # TODO what is the the nointeraction=TRUE bit for, in load_door_data(...)?
-    # TODO way to load it to a dataframe? or otherwise how to get it out of
-    # the r workspace / inspect the workspace to see what it loaded?
-    door_data.load_door_data()
-    
 
